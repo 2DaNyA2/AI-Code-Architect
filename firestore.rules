@@ -14,6 +14,19 @@ service cloud.firestore {
     //   - lastGenerationDate: string (required) - The date of the last generation (YYYY-MM-DD)
     //   - subscriptionTier: string (required, immutable for user) - The user's subscription tier ('free' or 'premium')
     //
+    // Collection: users/{userId}/projects
+    // Document ID: projectId
+    // Fields:
+    //   - id: string (required, immutable) - The project's unique ID
+    //   - userId: string (required, immutable) - The owner's user ID
+    //   - idea: string (required, immutable) - The original idea prompt
+    //   - project_name: string (required, immutable) - The generated project name
+    //   - tech_stack: list (required, immutable) - Recommended technologies
+    //   - file_structure: string (required, immutable) - Tree-like structure of folders and files
+    //   - core_logic: string (required, immutable) - JSON stringified array of core logic files
+    //   - setup_guide: list (required, immutable) - Steps for deployment
+    //   - createdAt: number (required, immutable) - Timestamp of creation
+    //
     // ===============================================================
 
     // ===============================================================
@@ -66,11 +79,31 @@ service cloud.firestore {
              );
     }
 
+    function isValidProjectCreate(data, userId) {
+      return hasOnlyAllowedFields(['id', 'userId', 'idea', 'project_name', 'tech_stack', 'file_structure', 'core_logic', 'setup_guide', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() < 100 &&
+             data.userId is string && data.userId == userId && data.userId == request.auth.uid &&
+             data.idea is string && data.idea.size() > 0 && data.idea.size() < 5000 &&
+             data.project_name is string && data.project_name.size() > 0 && data.project_name.size() < 200 &&
+             data.tech_stack is list && data.tech_stack.size() <= 50 &&
+             data.file_structure is string && data.file_structure.size() < 50000 &&
+             data.core_logic is string && data.core_logic.size() < 500000 &&
+             data.setup_guide is list && data.setup_guide.size() <= 100 &&
+             data.createdAt is number;
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUserCreate(request.resource.data);
       allow update: if isOwner(userId) && isValidUserUpdate(request.resource.data);
       allow delete: if false; // Users cannot delete their profile
+      
+      match /projects/{projectId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidProjectCreate(request.resource.data, userId);
+        allow update: if false; // Projects are immutable
+        allow delete: if isOwner(userId); // Allow users to delete their own projects
+      }
     }
   }
 }
