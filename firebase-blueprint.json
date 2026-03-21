@@ -12,12 +12,33 @@
         "subscriptionTier": { "type": "string", "enum": ["free", "premium"], "description": "The user's subscription tier" }
       },
       "required": ["uid", "email", "generationsToday", "lastGenerationDate", "subscriptionTier"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A generated architecture project",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The project's unique ID" },
+        "userId": { "type": "string", "description": "The owner's user ID" },
+        "idea": { "type": "string", "description": "The original idea prompt" },
+        "project_name": { "type": "string", "description": "The generated project name" },
+        "tech_stack": { "type": "array", "items": { "type": "string" }, "description": "Recommended technologies" },
+        "file_structure": { "type": "string", "description": "Tree-like structure of folders and files" },
+        "core_logic": { "type": "string", "description": "JSON stringified array of core logic files" },
+        "setup_guide": { "type": "array", "items": { "type": "string" }, "description": "Steps for deployment" },
+        "createdAt": { "type": "number", "description": "Timestamp of creation" }
+      },
+      "required": ["id", "userId", "idea", "project_name", "tech_stack", "file_structure", "core_logic", "setup_guide", "createdAt"]
     }
   },
   "firestore": {
     "users/{userId}": {
       "schema": { "$ref": "#/entities/User" },
       "description": "Stores user profiles and generation limits"
+    },
+    "users/{userId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Stores generated projects for a user"
     }
   }
 }
