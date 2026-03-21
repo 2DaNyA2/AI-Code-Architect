@@ -1,0 +1,23 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique ID" },
+        "email": { "type": "string", "description": "The user's email address" },
+        "generationsToday": { "type": "number", "description": "Number of generations performed today" },
+        "lastGenerationDate": { "type": "string", "description": "The date of the last generation (YYYY-MM-DD)" },
+        "subscriptionTier": { "type": "string", "enum": ["free", "premium"], "description": "The user's subscription tier" }
+      },
+      "required": ["uid", "email", "generationsToday", "lastGenerationDate", "subscriptionTier"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles and generation limits"
+    }
+  }
+}

@@ -1,0 +1,76 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (matches auth.uid)
+    // Fields:
+    //   - uid: string (required, immutable) - The user's unique ID
+    //   - email: string (required, immutable) - The user's email address
+    //   - generationsToday: number (required) - Number of generations performed today
+    //   - lastGenerationDate: string (required) - The date of the last generation (YYYY-MM-DD)
+    //   - subscriptionTier: string (required, immutable for user) - The user's subscription tier ('free' or 'premium')
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUserCreate(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'generationsToday', 'lastGenerationDate', 'subscriptionTier']) &&
+             data.uid is string && data.uid == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             data.generationsToday is number && data.generationsToday == 0 &&
+             data.lastGenerationDate is string && isValidDateString(data.lastGenerationDate) &&
+             data.subscriptionTier == 'free';
+    }
+
+    function isValidUserUpdate(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'generationsToday', 'lastGenerationDate', 'subscriptionTier']) &&
+             data.uid == resource.data.uid &&
+             data.email == resource.data.email &&
+             data.subscriptionTier == resource.data.subscriptionTier && // User cannot change their tier
+             data.generationsToday is number && data.generationsToday >= 0 &&
+             data.lastGenerationDate is string && isValidDateString(data.lastGenerationDate) &&
+             // Ensure they are only incrementing by 1 if same day, or resetting to 1 if new day
+             (
+               (data.lastGenerationDate == resource.data.lastGenerationDate && data.generationsToday == resource.data.generationsToday + 1) ||
+               (data.lastGenerationDate != resource.data.lastGenerationDate && data.generationsToday == 1) ||
+               (data.lastGenerationDate == resource.data.lastGenerationDate && data.generationsToday == resource.data.generationsToday) // Allow no-op updates
+             );
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserCreate(request.resource.data);
+      allow update: if isOwner(userId) && isValidUserUpdate(request.resource.data);
+      allow delete: if false; // Users cannot delete their profile
+    }
+  }
+}
