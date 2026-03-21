@@ -6,7 +6,7 @@
 import { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Code2, FolderTree, Terminal, Rocket, Layers, FileCode2, Sparkles, LogOut, ShieldAlert, Lock, User as UserIcon, History, X, ChevronRight } from 'lucide-react';
+import { Loader2, Code2, FolderTree, Terminal, Rocket, Layers, FileCode2, Sparkles, LogOut, ShieldAlert, Lock, User as UserIcon, History, X, ChevronRight, Folder, File, FileJson, FileCode, FileText } from 'lucide-react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, addDoc } from 'firebase/firestore';
@@ -122,6 +122,52 @@ interface UserProfile {
 }
 
 const DAILY_LIMIT = 5;
+
+const FileTreeViewer = ({ content }: { content: string }) => {
+  const lines = content.trim().split('\n');
+  
+  return (
+    <div className="bg-[#0f1115] border border-white/10 rounded-xl p-4 overflow-x-auto font-mono text-sm leading-relaxed">
+      {lines.map((line, i) => {
+        // Match standard tree characters and spaces
+        const match = line.match(/^([│├└─\s]*)(.*)$/);
+        const prefix = match ? match[1] : '';
+        const name = match ? match[2] : line;
+        
+        if (!name) return <div key={i} className="h-4"></div>;
+        
+        let Icon = File;
+        let color = "text-slate-300";
+        
+        const isFolder = name.endsWith('/') || (!name.includes('.') && !name.includes('README') && !name.includes('Dockerfile'));
+        
+        if (isFolder) {
+          Icon = Folder;
+          color = "text-emerald-400";
+        } else if (name.includes('.ts') || name.includes('.js') || name.includes('.tsx') || name.includes('.jsx')) {
+          Icon = FileCode;
+          color = "text-blue-400";
+        } else if (name.includes('.json')) {
+          Icon = FileJson;
+          color = "text-yellow-400";
+        } else if (name.includes('.md') || name.includes('.txt')) {
+          Icon = FileText;
+          color = "text-slate-400";
+        }
+        
+        const displayName = name.replace(/\/$/, '');
+        
+        return (
+          <div key={i} className="flex items-center hover:bg-white/5 px-2 py-0.5 rounded -mx-2 w-fit min-w-full transition-colors cursor-default">
+            <span className="text-slate-600 whitespace-pre">{prefix}</span>
+            <Icon size={14} className={`mr-2 shrink-0 ${color}`} />
+            <span className={`${color} whitespace-nowrap`}>{displayName}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 export default function AppWrapper() {
   return (
@@ -305,7 +351,7 @@ function App() {
 Provide the response in JSON format containing the following fields:
 project_name: name of the project.
 tech_stack: list of recommended technologies.
-file_structure: tree-like structure of folders and files.
+file_structure: tree-like structure of folders and files (use standard tree characters ├── and └──, ensure folders end with /).
 core_logic: array of objects describing the code for 2-3 key files (file_name, description, code_snippet).
 setup_guide: array of steps for deployment/setup.
 
@@ -664,9 +710,7 @@ Respond clearly, structurally, and technically accurately. The user wants to cre
                   <FolderTree size={18} className="text-emerald-400" />
                   Project Structure
                 </h3>
-                <pre className="bg-[#0f1115] border border-white/10 rounded-xl p-4 overflow-x-auto text-sm font-mono text-slate-300">
-                  {project.file_structure}
-                </pre>
+                <FileTreeViewer content={project.file_structure} />
               </div>
 
               {/* Core Logic */}
@@ -721,6 +765,5 @@ Respond clearly, structurally, and technically accurately. The user wants to cre
     </div>
   );
 }
-
 
 
