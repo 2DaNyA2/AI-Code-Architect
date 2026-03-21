@@ -6,10 +6,10 @@
 import { useState, useEffect, Component, ErrorInfo, ReactNode } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Code2, FolderTree, Terminal, Rocket, Layers, FileCode2, Sparkles, LogOut, ShieldAlert, Lock, User as UserIcon } from 'lucide-react';
+import { Loader2, Code2, FolderTree, Terminal, Rocket, Layers, FileCode2, Sparkles, LogOut, ShieldAlert, Lock, User as UserIcon, History, X, ChevronRight } from 'lucide-react';
 import { auth, db } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, orderBy, addDoc } from 'firebase/firestore';
 
 enum OperationType {
   CREATE = 'create',
@@ -99,6 +99,8 @@ class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean,
 }
 
 interface GeneratedProject {
+  id?: string;
+  idea?: string;
   project_name: string;
   tech_stack: string[];
   file_structure: string;
@@ -108,6 +110,7 @@ interface GeneratedProject {
     code_snippet: string;
   }[];
   setup_guide: string[];
+  createdAt?: number;
 }
 
 interface UserProfile {
@@ -139,9 +142,14 @@ function App() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [showSubscribeModal, setShowSubscribeModal] = useState(false);
+  
+  // History State
+  const [history, setHistory] = useState<GeneratedProject[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     let unsubProfile: (() => void) | undefined;
+    let unsubHistory: (() => void) | undefined;
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
@@ -150,9 +158,14 @@ function App() {
         unsubProfile();
         unsubProfile = undefined;
       }
+      if (unsubHistory) {
+        unsubHistory();
+        unsubHistory = undefined;
+      }
 
       if (!currentUser) {
         setProfile(null);
+        setHistory([]);
         setAuthLoading(false);
         return;
       }
@@ -187,13 +200,35 @@ function App() {
       }, (error) => {
         handleFirestoreError(error, OperationType.GET, `users/${currentUser.uid}`, currentUser);
       });
+
+      // Listen to history changes
+      const projectsRef = collection(db, 'users', currentUser.uid, 'projects');
+      const q = query(projectsRef, orderBy('createdAt', 'desc'));
+      unsubHistory = onSnapshot(q, (snapshot) => {
+        const projectsData: GeneratedProject[] = [];
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          projectsData.push({
+            id: doc.id,
+            idea: data.idea,
+            project_name: data.project_name,
+            tech_stack: data.tech_stack,
+            file_structure: data.file_structure,
+            core_logic: JSON.parse(data.core_logic),
+            setup_guide: data.setup_guide,
+            createdAt: data.createdAt
+          });
+        });
+        setHistory(projectsData);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, `users/${currentUser.uid}/projects`, currentUser);
+      });
     });
 
     return () => {
       unsubscribe();
-      if (unsubProfile) {
-        unsubProfile();
-      }
+      if (unsubProfile) unsubProfile();
+      if (unsubHistory) unsubHistory();
     };
   }, []);
 
@@ -308,7 +343,28 @@ Respond clearly, structurally, and technically accurately. The user wants to cre
 
       if (response.text) {
         const parsed = JSON.parse(response.text) as GeneratedProject;
+        parsed.idea = idea;
         setProject(parsed);
+        
+        // Save to history
+        try {
+          const projectsRef = collection(db, 'users', user.uid, 'projects');
+          const newDocRef = doc(projectsRef);
+          await setDoc(newDocRef, {
+            id: newDocRef.id,
+            userId: user.uid,
+            idea: idea,
+            project_name: parsed.project_name,
+            tech_stack: parsed.tech_stack,
+            file_structure: parsed.file_structure,
+            core_logic: JSON.stringify(parsed.core_logic),
+            setup_guide: parsed.setup_guide,
+            createdAt: Date.now()
+          });
+        } catch (saveErr) {
+          console.error("Failed to save project to history:", saveErr);
+          // Non-blocking error, we still show the generated project
+        }
       } else {
         setError('Failed to generate response. Please try again.');
       }
@@ -436,6 +492,14 @@ Respond clearly, structurally, and technically accurately. The user wants to cre
               </div>
               <div className="h-6 w-px bg-white/10 hidden sm:block"></div>
               <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => setShowHistory(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                >
+                  <History size={16} />
+                  <span className="hidden sm:inline">History</span>
+                </button>
+                <div className="h-6 w-px bg-white/10 hidden sm:block"></div>
                 <div className="flex items-center gap-2 text-sm text-slate-300">
                   {user.photoURL ? (
                     <img src={user.photoURL} alt="Avatar" className="w-6 h-6 rounded-full" referrerPolicy="no-referrer" />
@@ -456,6 +520,72 @@ Respond clearly, structurally, and technically accurately. The user wants to cre
           )}
         </div>
       </header>
+
+      {/* History Sidebar */}
+      <AnimatePresence>
+        {showHistory && (
+          <>
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowHistory(false)}
+              className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-[#16191f] border-l border-white/10 shadow-2xl flex flex-col"
+            >
+              <div className="flex items-center justify-between p-4 border-b border-white/10">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <History size={18} className="text-emerald-400" />
+                  Your Architectures
+                </h2>
+                <button 
+                  onClick={() => setShowHistory(false)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {history.length === 0 ? (
+                  <div className="text-center text-slate-500 mt-10">
+                    <History size={32} className="mx-auto mb-3 opacity-20" />
+                    <p>No architectures generated yet.</p>
+                  </div>
+                ) : (
+                  history.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setProject(item);
+                        setIdea(item.idea || '');
+                        setShowHistory(false);
+                      }}
+                      className="w-full text-left p-4 rounded-xl border border-white/5 bg-[#0f1115] hover:border-emerald-500/30 hover:bg-white/5 transition-all group"
+                    >
+                      <h3 className="font-medium text-white mb-1 group-hover:text-emerald-400 transition-colors">
+                        {item.project_name}
+                      </h3>
+                      <p className="text-xs text-slate-400 line-clamp-2 mb-2">
+                        {item.idea}
+                      </p>
+                      <div className="flex items-center justify-between text-xs text-slate-500">
+                        <span>{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Unknown date'}</span>
+                        <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-emerald-400" />
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <main className="max-w-6xl mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Input Section */}
@@ -591,5 +721,6 @@ Respond clearly, structurally, and technically accurately. The user wants to cre
     </div>
   );
 }
+
 
 
